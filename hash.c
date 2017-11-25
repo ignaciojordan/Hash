@@ -11,30 +11,6 @@
 #define CARGA_MIN 0.25
 #define EXPANCION 2 //usar para el nuevo hash, si achicas hace hash->tamanio/2 si agrandas hash->tamanio*2
 
-typedef enum estado{
-	BORRADO,
-	OCUPADO,
-	VACIO
-}estado_t;
-
-typedef struct campo_hash {
-	char* clave;
-	void* dato;
-	estado_t estado;
-}campo_hash_t;
-
-typedef struct hash {
-	size_t cantidad;
-	size_t tamanio;
-	hash_destruir_dato_t destructor;
-	campo_hash_t* tabla;
-}hash_t;
-
-typedef struct hash_iter {
-	size_t actual;
-	const hash_t* hash;
-}hash_iter_t;
-
 //Funcion de hashing "Kerrigan and Ritchie"
 
 size_t hash_multiplicative(const char* clave, const hash_t* hash) {
@@ -68,19 +44,38 @@ size_t buscar_posicion(const char* clave, const hash_t* hash){
 	}
 	return buscado;
 }
+
+bool tabla_crear(hash_t* hash, size_t tam){
+	hash->tabla = malloc(tam * sizeof(campo_hash_t));
+	if (!hash->tabla){
+		free(hash);
+		return false;
+	}
+	hash->tamanio = tam;
+	hash->cantidad = 0;
+	for (int i = 0; i < tam; i++){
+		hash->tabla[i].estado = VACIO;
+		hash->tabla[i].clave = NULL;
+	}
+	return true;
+}
 //Funcion auxiliar para redomensionar el hash
 
 bool hash_redimensionar(hash_t* hash, size_t tam) {
 
 	campo_hash_t* tabla = hash->tabla;
-	campo_hash_t* tabla_nueva = calloc(tam, sizeof(campo_hash_t));
+	size_t tamViejo = hash->tamanio;
+	/*campo_hash_t* tabla_nueva = calloc(tam, sizeof(campo_hash_t));
 	if (!tabla_nueva) {
 		return false;
 	}
 	size_t tamViejo = hash->tamanio;
 	hash->tabla = tabla_nueva;
 	hash->tamanio = tam;
-	hash->cantidad = 0;
+	hash->cantidad = 0;*/
+	if (!tabla_crear(hash, tam)){
+		return false;
+	}
 	for(size_t i = 0; i < tamViejo; i++ ) {
 		if(tabla[i].estado == OCUPADO) {
 			if (!hash_guardar(hash,tabla[i].clave, tabla[i].dato)){
@@ -94,23 +89,17 @@ bool hash_redimensionar(hash_t* hash, size_t tam) {
 	free(tabla);
 	return true;
 }
+
 //Primitivas Hash
 hash_t *hash_crear(hash_destruir_dato_t destruir_dato){
 	hash_t* hash = malloc(sizeof(hash_t));
 	if (!hash){
 		return NULL;
 	}
-	hash->tabla = calloc(HASH_TAM, sizeof(campo_hash_t));
-	if (!hash->tabla){
-		free(hash);
+	if (!tabla_crear(hash, HASH_TAM)){
 		return NULL;
 	}
-	hash->tamanio = HASH_TAM;
-	hash->cantidad = 0;
 	hash->destructor = destruir_dato;
-	for (int i = 0; i < HASH_TAM; i++){
-		hash->tabla[i].estado = VACIO;
-	}
 	return hash;
 }
 
@@ -126,12 +115,12 @@ bool hash_pertenece(const hash_t *hash, const char *clave){
 	return true;
 }
 
-void *hash_obtener(const hash_t *hash, const char *clave){
-	if(hash_pertenece(hash, clave)){
-		size_t posicion = buscar_posicion(clave, hash);
-		return hash->tabla[posicion].dato;
-	}
-	return NULL;
+void* hash_obtener(const hash_t* hash, const char* clave){
+    size_t pos = buscar_posicion(clave,hash);
+    if (hash->tabla[pos].estado == VACIO || hash->tabla[pos].estado == BORRADO){ 
+        return NULL;
+    }
+    return hash->tabla[pos].dato; 
 }
 
 void hash_destruir(hash_t *hash) {
@@ -147,10 +136,13 @@ void hash_destruir(hash_t *hash) {
 }
 
 void *hash_borrar(hash_t *hash, const char *clave) {
-	if (!hash_pertenece(hash, clave)){
+	/*if (!hash_pertenece(hash, clave)){
         return NULL;
-    }
+    }*/
 	size_t posicion = buscar_posicion(clave,hash);
+	if (hash->tabla[posicion].estado == VACIO || hash->tabla[posicion].estado == BORRADO){
+		return NULL;
+	}
 	void * valor = hash->tabla[posicion].dato;
 	hash->tabla[posicion].dato = NULL;
 	hash->tabla[posicion].estado = BORRADO;
@@ -166,7 +158,7 @@ void *hash_borrar(hash_t *hash, const char *clave) {
 
 bool hash_guardar(hash_t *hash, const char *clave, void *dato){
 	size_t posicion = buscar_posicion(clave, hash);
-	if(hash_pertenece(hash,clave)){
+	if(hash->tabla[posicion].estado == OCUPADO ){
         if (hash->destructor){
             void* borrar = hash->tabla[posicion].dato;
             hash->destructor(borrar);
@@ -189,22 +181,6 @@ bool hash_guardar(hash_t *hash, const char *clave, void *dato){
 
 
 // Crea iterador
-hash_iter_t *hash_iter_crear(const hash_t *hash) {
-
-	if (hash == NULL) return NULL;
-
-	hash_iter_t* iterador = malloc( sizeof(hash_iter_t));
-	if(iterador == NULL) return NULL;
-
-	iterador->actual = 0;
-	iterador->hash = hash;
-
-	while ((iterador->actual < iterador->hash->tamanio) &&
-	 (hash->tabla[iterador->actual].clave == NULL )) {
-	 	iterador->actual ++;
-	}
-	return iterador;
-}
 
 bool hash_iter_avanzar(hash_iter_t *iter) {
 
@@ -217,6 +193,21 @@ bool hash_iter_avanzar(hash_iter_t *iter) {
 	}
 	return true;
 }
+
+hash_iter_t *hash_iter_crear(const hash_t *hash) {
+
+	if (hash == NULL) return NULL;
+
+	hash_iter_t* iterador = malloc( sizeof(hash_iter_t));
+	if(iterador == NULL) return NULL;
+
+	iterador->actual = 0;
+	iterador->hash = hash;
+
+	hash_iter_avanzar( iterador);
+	return iterador;
+}
+
 
 const char* hash_iter_ver_actual(const hash_iter_t *iter){
 
