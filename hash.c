@@ -14,7 +14,7 @@
 //Funcion de hashing "Kerrigan and Ritchie"
 
 size_t hash_multiplicative(const char* clave, const hash_t* hash) {
-	size_t key = 0;
+	size_t key = 2;
 	size_t largo = strlen(clave);
 	for(size_t i = 0; i < largo; ++i){
 		key = 131 * key + clave[i];
